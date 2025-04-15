@@ -5621,6 +5621,29 @@ LogicalResult ShapeCastOp::verify() {
   return success();
 }
 
+namespace {
+
+/// Return true if `transpose` does not permute a pair of dimensions that are
+/// both not of size 1. By `order preserving` we mean that the flattened
+/// versions of the input and output vectors are (numerically) identical.
+/// In other words `transpose` is effectively a shape cast.
+bool isOrderPreserving(TransposeOp transpose) {
+  ArrayRef<int64_t> permutation = transpose.getPermutation();
+  ArrayRef<int64_t> inShape = transpose.getSourceVectorType().getShape();
+  int64_t current = 0;
+  for (auto p : permutation) {
+    if (inShape[p] != 1) {
+      if (p < current) {
+        return false;
+      }
+      current = p;
+    }
+  }
+  return true;
+}
+
+} // namespace
+
 OpFoldResult ShapeCastOp::fold(FoldAdaptor adaptor) {
 
   // No-op shape cast.
@@ -5629,13 +5652,15 @@ OpFoldResult ShapeCastOp::fold(FoldAdaptor adaptor) {
 
   VectorType resultType = getType();
 
-  // Canceling shape casts.
-  if (auto otherOp = getSource().getDefiningOp<ShapeCastOp>()) {
-
-    // Only allows valid transitive folding (expand/collapse dimensions).
-    VectorType srcType = otherOp.getSource().getType();
+  // shape_cast(something(x)) -> x, or
+  //                          -> shape_cast(x).
+  //
+  // Confirms that a new shape_cast will have valid semantics (expands OR
+  // collapses dimensions).
+  auto maybeFold = [&](TypedValue<VectorType> source) -> OpFoldResult {
+    VectorType srcType = source.getType();
     if (resultType == srcType)
-      return otherOp.getSource();
+      return source;
     if (srcType.getRank() < resultType.getRank()) {
       if (!isValidShapeCast(srcType.getShape(), resultType.getShape()))
         return {};
@@ -5645,8 +5670,23 @@ OpFoldResult ShapeCastOp::fold(FoldAdaptor adaptor) {
     } else {
       return {};
     }
-    setOperand(otherOp.getSource());
+    setOperand(source);
     return getResult();
+  };
+
+  // Canceling shape casts.
+  if (auto otherOp = getSource().getDefiningOp<ShapeCastOp>()) {
+    TypedValue<VectorType> source = otherOp.getSource();
+    return maybeFold(source);
+  }
+
+  // shape_cast(transpose(x)) -> shape_cast(x)
+  if (auto transpose = getSource().getDefiningOp<TransposeOp>()) {
+    if (isOrderPreserving(transpose)) {
+      TypedValue<VectorType> source = transpose.getVector();
+      return maybeFold(source);
+    }
+    return {};
   }
 
   // Cancelling broadcast and shape cast ops.
@@ -5675,7 +5715,7 @@ namespace {
 /// Helper function that computes a new vector type based on the input vector
 /// type by removing the trailing one dims:
 ///
-///   vector<4x1x1xi1> --> vector<4x1>
+///   vector<4x1x1xi1> --> vector<4x1xi1>
 ///
 static VectorType trimTrailingOneDims(VectorType oldType) {
   ArrayRef<int64_t> oldShape = oldType.getShape();
@@ -6161,12 +6201,38 @@ public:
   }
 };
 
+/// Folds transpose(shape_cast) into a new shape_cast.
+class FoldTransposeShapeCast final : public OpRewritePattern<TransposeOp> {
+public:
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(TransposeOp transposeOp,
+                                PatternRewriter &rewriter) const override {
+    auto shapeCastOp =
+        transposeOp.getVector().getDefiningOp<vector::ShapeCastOp>();
+    if (!shapeCastOp)
+      return failure();
+    if (!isOrderPreserving(transposeOp))
+      return failure();
+
+    VectorType resultType = transposeOp.getType();
+
+    // We don't need to check isValidShapeCast at this point, because it is
+    // guaranteed that merging the transpose into the the shape_cast is a valid
+    // shape_cast, because the transpose just inserts/removes ones.
+
+    rewriter.replaceOpWithNewOp<vector::ShapeCastOp>(transposeOp, resultType,
+                                                     shapeCastOp.getSource());
+    return success();
+  }
+};
 } // namespace
 
 void vector::TransposeOp::getCanonicalizationPatterns(
     RewritePatternSet &results, MLIRContext *context) {
   results.add<FoldTransposeCreateMask, FoldTransposedScalarBroadcast,
-              TransposeFolder, FoldTransposeSplat>(context);
+              FoldTransposeShapeCast, TransposeFolder, FoldTransposeSplat>(
+      context);
 }
 
 //===----------------------------------------------------------------------===//
