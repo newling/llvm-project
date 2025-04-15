@@ -5682,6 +5682,8 @@ OpFoldResult ShapeCastOp::fold(FoldAdaptor adaptor) {
 
   // shape_cast(transpose(x)) -> shape_cast(x)
   if (auto transpose = getSource().getDefiningOp<TransposeOp>()) {
+    if (transpose.getType().isScalable())
+      return {};
     if (isOrderPreserving(transpose)) {
       TypedValue<VectorType> source = transpose.getVector();
       return maybeFold(source);
@@ -6213,6 +6215,8 @@ public:
     if (!shapeCastOp)
       return failure();
     if (!isOrderPreserving(transposeOp))
+      return failure();
+    if (transposeOp.getType().isScalable())
       return failure();
 
     VectorType resultType = transposeOp.getType();
