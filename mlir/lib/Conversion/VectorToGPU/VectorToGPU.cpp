@@ -985,9 +985,6 @@ convertExtractStridedSlice(RewriterBase &rewriter,
        ldFragmentInfo->elementsPerRegister) &&
       "Number of elements per register should be same for load and mma.sync");
 
-  // Create vector.extract_strided_slice op for thread-owned fragments.
-  std::array<int64_t, 2> strides = {1,
-                                    1}; // stride for extract slice is always 1.
   std::array<int64_t, 2> sliceShape = {
       mmaSyncFragmentInfo->numRegistersPerFragment,
       mmaSyncFragmentInfo->elementsPerRegister};
@@ -1017,7 +1014,7 @@ convertExtractStridedSlice(RewriterBase &rewriter,
     sliceOffset[0] = (warpVectorShape[1] / offsets[1]);
 
   Value newOp = rewriter.create<vector::ExtractStridedSliceOp>(
-      loc, sourceVector, sliceOffset, sliceShape, strides);
+      loc, sourceVector, sliceOffset, sliceShape);
 
   valueMapping[op] = newOp;
   return success();

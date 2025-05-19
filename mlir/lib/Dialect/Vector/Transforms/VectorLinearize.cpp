@@ -109,16 +109,6 @@ public:
   }
 };
 
-template <typename TOp>
-static bool stridesAllOne(TOp op) {
-  static_assert(
-      std::is_same_v<TOp, vector::ExtractStridedSliceOp> ||
-          std::is_same_v<TOp, vector::InsertStridedSliceOp>,
-      "expected vector.extract_strided_slice or vector.insert_strided_slice");
-  ArrayAttr strides = op.getStrides();
-  return llvm::all_of(strides, isOneInteger);
-}
-
 /// Convert an array of attributes into a vector of integers, if possible.
 static FailureOr<SmallVector<int64_t>> intsFromArrayAttr(ArrayAttr attrs) {
   if (!attrs)
@@ -200,7 +190,7 @@ SmallVector<int64_t> static getStridedSliceInsertionIndices(
 ///
 /// ```
 ///   vector.extract_strided_slice %source
-///         { offsets = [..], strides = [..], sizes = [..] }
+///         { offsets = [..], sizes = [..] }
 /// ```
 ///
 /// is converted to :
@@ -228,14 +218,6 @@ struct LinearizeVectorExtractStridedSlice final
     VectorType flatOutputType = getTypeConverter()->convertType<VectorType>(
         extractStridedSliceOp.getType());
     assert(flatOutputType && "vector type expected");
-
-    // Expect a legalization failure if the strides are not all 1 (if ever the
-    // verifier for extract_strided_slice allows non-1 strides).
-    if (!stridesAllOne(extractStridedSliceOp)) {
-      return rewriter.notifyMatchFailure(
-          extractStridedSliceOp,
-          "extract_strided_slice with strides != 1 not supported");
-    }
 
     FailureOr<SmallVector<int64_t>> offsets =
         intsFromArrayAttr(extractStridedSliceOp.getOffsets());
@@ -265,7 +247,7 @@ struct LinearizeVectorExtractStridedSlice final
 /// For example, the following:
 /// ```
 ///  %0 = vector.insert_strided_slice %to_store, %into
-///             {offsets = [1, 0, 0, 0], strides = [1, 1]}
+///             {offsets = [1, 0, 0, 0]}
 ///                  : vector<2x2xi8> into vector<2x1x3x2xi8>
 /// ```
 ///
@@ -295,14 +277,6 @@ struct LinearizeVectorInsertStridedSlice final
   matchAndRewrite(vector::InsertStridedSliceOp insertStridedSliceOp,
                   OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override {
-
-    // Expect a legalization failure if the strides are not all 1 (if ever the
-    // verifier for insert_strided_slice allows non-1 strides).
-    if (!stridesAllOne(insertStridedSliceOp)) {
-      return rewriter.notifyMatchFailure(
-          insertStridedSliceOp,
-          "insert_strided_slice with strides != 1 not supported");
-    }
 
     VectorType inputType = insertStridedSliceOp.getValueToStore().getType();
     ArrayRef<int64_t> inputShape = inputType.getShape();

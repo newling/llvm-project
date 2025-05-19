@@ -118,24 +118,22 @@ extractConvInputSlices(RewriterBase &rewriter, Location loc, Value input,
     // Extract input slice of size {wSizeStep} @ [w + kw] for non-channeled
     // convolution.
     SmallVector<int64_t> sizes = {wSizeStep};
-    SmallVector<int64_t> strides = {1};
     for (int64_t kw = 0; kw < kwSize; ++kw) {
       for (int64_t w = 0; w < wSize; w += wSizeStep) {
         result.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
-            loc, input, /*offsets=*/ArrayRef<int64_t>{w + kw}, sizes, strides));
+            loc, input, /*offsets=*/ArrayRef<int64_t>{w + kw}, sizes));
       }
     }
   } else {
     // Extract lhs slice of size {n, wSizeStep, c} @ [0, sw * w + dw * kw, 0]
     // for channeled convolution.
     SmallVector<int64_t> sizes = {nSize, wSizeStep, cSize};
-    SmallVector<int64_t> strides = {1, 1, 1};
     for (int64_t kw = 0; kw < kwSize; ++kw) {
       for (int64_t w = 0; w < wSize; w += wSizeStep) {
         result.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
             loc, input,
             /*offsets=*/ArrayRef<int64_t>{0, w * strideW + kw * dilationW, 0},
-            sizes, strides));
+            sizes));
       }
     }
   }
@@ -167,19 +165,17 @@ extractConvResultSlices(RewriterBase &rewriter, Location loc, Value res,
   if (isSingleChanneled) {
     // Extract res slice: {wSizeStep} @ [w] for non-channeled convolution.
     SmallVector<int64_t> sizes = {wSizeStep};
-    SmallVector<int64_t> strides = {1};
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       result.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, res, /*offsets=*/ArrayRef<int64_t>{w}, sizes, strides));
+          loc, res, /*offsets=*/ArrayRef<int64_t>{w}, sizes));
     }
   } else {
     // Extract res slice: {n, wSizeStep, f} @ [0, w, 0] for channeled
     // convolution.
     SmallVector<int64_t> sizes = {nSize, wSizeStep, fSize};
-    SmallVector<int64_t> strides = {1, 1, 1};
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       result.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, res, /*offsets=*/ArrayRef<int64_t>{0, w, 0}, sizes, strides));
+          loc, res, /*offsets=*/ArrayRef<int64_t>{0, w, 0}, sizes));
     }
   }
   return result;
@@ -194,19 +190,16 @@ static Value insertConvResultSlices(RewriterBase &rewriter, Location loc,
   if (isSingleChanneled) {
     // Write back res slice: {wSizeStep} @ [w] for non-channeled convolution.
     // This does not depend on kw.
-    SmallVector<int64_t> strides = {1};
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       res = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, resVals[w], res, /*offsets=*/ArrayRef<int64_t>{w}, strides);
+          loc, resVals[w], res, /*offsets=*/ArrayRef<int64_t>{w});
     }
   } else {
     // Write back res slice: {n, wSizeStep, f} @ [0, w, 0] for channeled
     // convolution. This does not depend on kw.
-    SmallVector<int64_t> strides = {1, 1, 1};
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       res = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, resVals[w], res, /*offsets=*/ArrayRef<int64_t>{0, w, 0},
-          strides);
+          loc, resVals[w], res, /*offsets=*/ArrayRef<int64_t>{0, w, 0});
     }
   }
   return res;
@@ -3732,7 +3725,6 @@ struct Conv1DGenerator
     // Unroll along kw and read slices of lhs and rhs.
     SmallVector<Value> lhsVals, rhsVals, resVals;
     SmallVector<int64_t> inOutSliceSizes = {nSize, wSizeStep, cSize};
-    SmallVector<int64_t> inOutStrides = {1, 1, 1};
 
     // Extract lhs slice of size {n, wSizeStep, c}
     //   @ [0, sw * w + dw * kw, 0].
@@ -3741,7 +3733,7 @@ struct Conv1DGenerator
         lhsVals.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
             loc, maybeMaskedLhs->getResult(0),
             /*offsets=*/ArrayRef<int64_t>{0, w * strideW + kw * dilationW, 0},
-            inOutSliceSizes, inOutStrides));
+            inOutSliceSizes));
       }
     }
     // Extract rhs slice of size {c} @ [kw].
@@ -3754,8 +3746,7 @@ struct Conv1DGenerator
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       resVals.push_back(rewriter.create<vector::ExtractStridedSliceOp>(
           loc, maybeMaskedRes->getResult(0),
-          /*offsets=*/ArrayRef<int64_t>{0, w, 0}, inOutSliceSizes,
-          inOutStrides));
+          /*offsets=*/ArrayRef<int64_t>{0, w, 0}, inOutSliceSizes));
     }
 
     auto linearIndex = [&](int64_t kw, int64_t w) {
@@ -3808,8 +3799,7 @@ struct Conv1DGenerator
     for (int64_t w = 0; w < wSize; w += wSizeStep) {
       maybeMaskedRes = rewriter.create<vector::InsertStridedSliceOp>(
           loc, resVals[w], maybeMaskedRes->getResult(0),
-          /*offsets=*/ArrayRef<int64_t>{0, w, 0},
-          /*strides=*/ArrayRef<int64_t>{1, 1, 1});
+          /*offsets=*/ArrayRef<int64_t>{0, w, 0});
     }
     //===------------------------------------------------------------------===//
     // End vector-only rewrite part

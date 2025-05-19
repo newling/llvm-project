@@ -142,9 +142,8 @@ public:
                                 ArrayRef<int64_t> operandOffsets) {
         SmallVector<int64_t> operandShape =
             applyPermutationMap(permutationMap, ArrayRef<int64_t>(smmlaShape));
-        SmallVector<int64_t> operandStrides(operandOffsets.size(), 1);
         return rewriter.createOrFold<vector::ExtractStridedSliceOp>(
-            loc, operand, operandOffsets, operandShape, operandStrides);
+            loc, operand, operandOffsets, operandShape);
       };
 
       // Extract tiled lhs, rhs, and acc
@@ -178,10 +177,8 @@ public:
               loc, expandedTypeType, rewriter.getZeroAttr(expandedTypeType));
           SmallVector<int64_t> offsets(
               cast<ShapedType>(emptyOperand.getType()).getRank(), 0);
-          SmallVector<int64_t> strides(
-              cast<ShapedType>(tiledOperand.getType()).getRank(), 1);
           return rewriter.createOrFold<vector::InsertStridedSliceOp>(
-              loc, tiledOperand, emptyOperand, offsets, strides);
+              loc, tiledOperand, emptyOperand, offsets);
         };
         tiledLhs = expandForSMMLA(tiledLhs, inputExpandedType);
         tiledAcc = expandForSMMLA(tiledAcc, outputExpandedType);
@@ -222,10 +219,8 @@ public:
 
       // Insert the tiled result back into the non tiled result of the
       // contract op.
-      SmallVector<int64_t> strides(
-          cast<ShapedType>(tiledRes.getType()).getRank(), 1);
       result = rewriter.createOrFold<vector::InsertStridedSliceOp>(
-          loc, tiledRes, result, accOffsets, strides);
+          loc, tiledRes, result, accOffsets);
     }
 
     rewriter.replaceOp(op, result);

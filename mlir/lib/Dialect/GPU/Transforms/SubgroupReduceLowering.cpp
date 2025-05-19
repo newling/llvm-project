@@ -22,7 +22,6 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/TypeUtilities.h"
-#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include <cassert>
@@ -38,10 +37,10 @@ namespace {
 ///  ==>
 /// %v0 = arith.constant dense<0.0> : vector<3xf16>
 /// %e0 = vector.extract_strided_slice %x
-///   {offsets = [0], sizes = [2], strides = [1}: vector<3xf32> to vector<2xf32>
+///   {offsets = [0], sizes = [2]}: vector<3xf32> to vector<2xf32>
 /// %r0 = gpu.subgroup_reduce add %e0 : (vector<2xf16>) -> vector<2xf16>
 /// %v1 = vector.insert_strided_slice %r0, %v0
-///   {offsets = [0], strides = [1}: vector<2xf32> into vector<3xf32>
+///   {offsets = [0]}: vector<2xf32> into vector<3xf32>
 /// %e1 = vector.extract %x[2] : f16 from vector<2xf16>
 /// %r1 = gpu.subgroup_reduce add %e1 : (f16) -> f16
 /// %a  = vector.insert %r1, %v1[2] : f16 into vector<3xf16>
@@ -94,8 +93,7 @@ struct BreakDownSubgroupReduce final : OpRewritePattern<gpu::SubgroupReduceOp> {
             rewriter.create<vector::ExtractOp>(loc, op.getValue(), startIdx);
       } else {
         extracted = rewriter.create<vector::ExtractStridedSliceOp>(
-            loc, op.getValue(), /*offsets=*/startIdx, /*sizes=*/numElems,
-            /*strides=*/1);
+            loc, op.getValue(), /*offsets=*/startIdx, /*sizes=*/numElems);
       }
 
       Value reduce = rewriter.create<gpu::SubgroupReduceOp>(
@@ -106,8 +104,8 @@ struct BreakDownSubgroupReduce final : OpRewritePattern<gpu::SubgroupReduceOp> {
         continue;
       }
 
-      res = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, reduce, res, /*offsets=*/startIdx, /*strides=*/1);
+      res = rewriter.create<vector::InsertStridedSliceOp>(loc, reduce, res,
+                                                          /*offsets=*/startIdx);
     }
 
     rewriter.replaceOp(op, res);
@@ -330,7 +328,7 @@ struct VectorSubgroupReduceToShuffles final
       auto zero = rewriter.create<arith::ConstantOp>(
           loc, rewriter.getZeroAttr(extendedVecTy));
       extendedInput = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, extendedInput, zero, /*offsets=*/0, /*strides=*/1);
+          loc, extendedInput, zero, /*offsets=*/0);
     }
 
     auto shuffleIntType = rewriter.getIntegerType(shuffleBitwidth);
@@ -353,8 +351,7 @@ struct VectorSubgroupReduceToShuffles final
 
     if (vecBitwidth < shuffleBitwidth) {
       res = rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, res, /*offsets=*/0, /*sizes=*/vecTy.getNumElements(),
-          /*strides=*/1);
+          loc, res, /*offsets=*/0, /*sizes=*/vecTy.getNumElements());
     }
 
     rewriter.replaceOp(op, res);

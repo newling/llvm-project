@@ -572,11 +572,11 @@ struct BubbleDownVectorBitCastForExtract
 // This transforms IR like:
 //    %cast = vector.bitcast %arg0: vector<4xf32> to vector<8xf16>
 //     %0 = vector.extract_strided_slice %cast {
-//            offsets = [4], sizes = [4], strides = [1]
+//            offsets = [4], sizes = [4]
 //          } : vector<8xf16> to vector<4xf16>
 // Into:
 //   %0 = vector.extract_strided_slice %src {
-//          offsets = [2], sizes = [2], strides = [1]
+//          offsets = [2], sizes = [2]
 //        } : vector<4xf32> to vector<2xf32>
 //   %1 = vector.bitcast %0 : vector<2xf32> to vector<4xf16>
 struct BubbleDownBitCastForStridedSliceExtract
@@ -597,11 +597,6 @@ struct BubbleDownBitCastForStridedSliceExtract
     int64_t castDstLastDim = castDstType.getShape().back();
     // Require casting to more elements for now; other cases to be implemented.
     if (castSrcLastDim > castDstLastDim)
-      return failure();
-
-    // Only accept all one strides for now.
-    if (llvm::any_of(extractOp.getStrides().getAsValueRange<IntegerAttr>(),
-                     [](const APInt &val) { return !val.isOne(); }))
       return failure();
 
     unsigned rank = extractOp.getSourceVectorType().getRank();
@@ -639,7 +634,7 @@ struct BubbleDownBitCastForStridedSliceExtract
 
     auto newExtractOp = rewriter.create<vector::ExtractStridedSliceOp>(
         extractOp.getLoc(), newExtractType, castOp.getSource(), newOffsets,
-        newSizes, extractOp.getStrides());
+        newSizes);
 
     rewriter.replaceOpWithNewOp<vector::BitCastOp>(
         extractOp, extractOp.getType(), newExtractOp);
@@ -722,13 +717,13 @@ struct BubbleUpBitCastForInsert : public OpRewritePattern<vector::BitCastOp> {
 //
 // This transforms IR like:
 //   %0 = vector.insert_strided_slice %src, %dst {
-//          offsets = [0], strides = [1]} : vector<4xf16> into vector<8xf16>
+//          offsets = [0]} : vector<4xf16> into vector<8xf16>
 //   %1 = vector.bitcast %0: vector<8xf16> to vector<4xf32>
 // Into:
 //   %0 = vector.bitcast %src : vector<4xf16> to vector<2xf32>
 //   %1 = vector.bitcast %dst : vector<8xf16> to vector<4xf32>
 //   %2 = vector.insert_strided_slice %src, %dst {
-//          offsets = [0], strides = [1]} : vector<2xf32> into vector<4xf32>
+//          offsets = [0]} : vector<2xf32> into vector<4xf32>
 struct BubbleUpBitCastForStridedSliceInsert
     : public OpRewritePattern<vector::BitCastOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -754,11 +749,6 @@ struct BubbleUpBitCastForStridedSliceInsert
     auto insertOp =
         bitcastOp.getSource().getDefiningOp<vector::InsertStridedSliceOp>();
     if (!insertOp)
-      return failure();
-
-    // Only accept all one strides for now.
-    if (llvm::any_of(insertOp.getStrides().getAsValueRange<IntegerAttr>(),
-                     [](const APInt &val) { return !val.isOne(); }))
       return failure();
 
     unsigned rank = insertOp.getSourceVectorType().getRank();
@@ -802,8 +792,7 @@ struct BubbleUpBitCastForStridedSliceInsert
         bitcastOp.getLoc(), newCastDstType, insertOp.getDest());
 
     rewriter.replaceOpWithNewOp<vector::InsertStridedSliceOp>(
-        bitcastOp, bitcastOp.getType(), newCastSrcOp, newCastDstOp, newOffsets,
-        insertOp.getStrides());
+        bitcastOp, bitcastOp.getType(), newCastSrcOp, newCastDstOp, newOffsets);
 
     return success();
   }
@@ -816,17 +805,17 @@ struct BubbleUpBitCastForStridedSliceInsert
 // Into:
 //   %cst = vector.splat %c0_f32 : vector<4xf32>
 //   %1 = vector.extract_strided_slice %0 {
-//          offsets = [0], sizes = [4], strides = [1]
+//          offsets = [0], sizes = [4]
 //        } : vector<8xf16> to vector<4xf16>
 //   %2 = vector.bitcast %1 : vector<4xf16> to vector<2xf32>
 //   %4 = vector.insert_strided_slice %2, %cst {
-//          offsets = [0], strides = [1]} : vector<2xf32> into vector<4xf32>
+//          offsets = [0]} : vector<2xf32> into vector<4xf32>
 //   %5 = vector.extract_strided_slice %0 {
-//          offsets = [4], sizes = [4], strides = [1]
+//          offsets = [4], sizes = [4]
 //        } : vector<8xf16> to vector<4xf16>
 //   %6 = vector.bitcast %5 : vector<4xf16> to vector<2xf32>
 //   %7 = vector.insert_strided_slice %6, %cst {
-//          offsets = [2], strides = [1]} : vector<2xf32> into vector<4xf32>
+//          offsets = [2]} : vector<2xf32> into vector<4xf32>
 struct BreakDownVectorBitCast : public OpRewritePattern<vector::BitCastOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -878,7 +867,6 @@ public:
     Value res = rewriter.create<SplatOp>(loc, castDstType, zero);
 
     SmallVector<int64_t> sliceShape = {castDstLastDim};
-    SmallVector<int64_t> strides = {1};
     VectorType newCastDstType =
         VectorType::get(SmallVector<int64_t>{castDstLastDim / shrinkRatio},
                         castDstType.getElementType());
@@ -886,12 +874,12 @@ public:
     for (int i = 0, e = shrinkRatio; i < e; ++i) {
       Value extracted = rewriter.create<ExtractStridedSliceOp>(
           loc, bitcastOp.getSource(), ArrayRef<int64_t>{i * castDstLastDim},
-          sliceShape, strides);
+          sliceShape);
       Value bitcast =
           rewriter.create<BitCastOp>(loc, newCastDstType, extracted);
       res = rewriter.create<InsertStridedSliceOp>(
           loc, bitcast, res,
-          ArrayRef<int64_t>{i * castDstLastDim / shrinkRatio}, strides);
+          ArrayRef<int64_t>{i * castDstLastDim / shrinkRatio});
     }
     rewriter.replaceOp(bitcastOp, res);
     return success();

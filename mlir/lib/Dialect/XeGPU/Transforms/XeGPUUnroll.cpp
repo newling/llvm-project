@@ -80,9 +80,8 @@ protected:
           loc, vecTy, DenseElementsAttr::get(vecTy, zeroAttr));
       for (auto [src, offsets] :
            llvm::zip_equal(srcs, StaticTileOffsetRange(shape, blockSize))) {
-        SmallVector<int64_t> staticStrides(offsets.size(), 1);
-        result = rewriter.create<vector::InsertStridedSliceOp>(
-            loc, src, result, offsets, staticStrides);
+        result = rewriter.create<vector::InsertStridedSliceOp>(loc, src, result,
+                                                               offsets);
       }
       return result;
     }
@@ -115,7 +114,7 @@ protected:
            StaticTileOffsetRange(shape, blockSize)) {
         SmallVector<int64_t> staticStrides(offsets.size(), 1);
         auto slice = rewriter.create<vector::ExtractStridedSliceOp>(
-            loc, src, offsets, blockSize, staticStrides);
+            loc, src, offsets, blockSize);
         results.push_back(slice);
       }
       return results;

@@ -34,11 +34,13 @@ static void incIdx(SmallVectorImpl<int64_t> &indices, VectorType vecType,
     assert(indices[dim] < vecType.getDimSize(dim) &&
            "Indices are out of bound");
     indices[dim] += step;
-    if (indices[dim] < vecType.getDimSize(dim))
+
+    int64_t spill = indices[dim] / vecType.getDimSize(dim);
+    if (spill == 0)
       break;
 
-    indices[dim] = 0;
-    step = 1;
+    indices[dim] %= vecType.getDimSize(dim);
+    step = spill;
   }
 }
 
@@ -85,9 +87,10 @@ public:
 
       Value extract =
           rewriter.create<vector::ExtractOp>(loc, op.getSource(), srcIdx);
-      result = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, extract, result,
-          /*offsets=*/resIdx, /*strides=*/1);
+      // insert strided slice ends up as shuffle anyway.
+      result =
+          rewriter.create<vector::InsertStridedSliceOp>(loc, extract, result,
+                                                        /*offsets=*/resIdx);
     }
 
     rewriter.replaceOp(op, result);
@@ -136,8 +139,7 @@ public:
       }
 
       Value extract = rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, op.getSource(), /*offsets=*/srcIdx, /*sizes=*/extractSize,
-          /*strides=*/1);
+          loc, op.getSource(), /*offsets=*/srcIdx, /*sizes=*/extractSize);
       result = rewriter.create<vector::InsertOp>(loc, extract, result, resIdx);
     }
     rewriter.replaceOp(op, result);

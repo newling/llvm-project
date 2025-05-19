@@ -80,17 +80,15 @@ struct CastAwayExtractStridedSliceLeadingOneDim
     Value newSrcVector = rewriter.create<vector::ExtractOp>(
         loc, extractOp.getVector(), splatZero(dropCount));
 
-    // The offsets/sizes/strides attribute can have a less number of elements
+    // The offsets/sizes attribute can have fewer elements
     // than the input vector's rank: it is meant for the leading dimensions.
     auto newOffsets = rewriter.getArrayAttr(
         extractOp.getOffsets().getValue().drop_front(dropCount));
     auto newSizes = rewriter.getArrayAttr(
         extractOp.getSizes().getValue().drop_front(dropCount));
-    auto newStrides = rewriter.getArrayAttr(
-        extractOp.getStrides().getValue().drop_front(dropCount));
 
     auto newExtractOp = rewriter.create<vector::ExtractStridedSliceOp>(
-        loc, newDstType, newSrcVector, newOffsets, newSizes, newStrides);
+        loc, newDstType, newSrcVector, newOffsets, newSizes);
 
     rewriter.replaceOpWithNewOp<vector::BroadcastOp>(extractOp, oldDstType,
                                                      newExtractOp);
@@ -127,11 +125,9 @@ struct CastAwayInsertStridedSliceLeadingOneDim
 
     auto newOffsets = rewriter.getArrayAttr(
         insertOp.getOffsets().getValue().take_back(newDstType.getRank()));
-    auto newStrides = rewriter.getArrayAttr(
-        insertOp.getStrides().getValue().take_back(newSrcType.getRank()));
 
     auto newInsertOp = rewriter.create<vector::InsertStridedSliceOp>(
-        loc, newDstType, newSrcVector, newDstVector, newOffsets, newStrides);
+        loc, newDstType, newSrcVector, newDstVector, newOffsets);
 
     rewriter.replaceOpWithNewOp<vector::BroadcastOp>(insertOp, oldDstType,
                                                      newInsertOp);

@@ -682,49 +682,36 @@ func.func @test_vector.transfer_write(%arg0: memref<?xvector<2xindex>>, %arg1: v
 
 func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
   // expected-error@+1 {{expected offsets of same size as destination vector rank}}
-  %1 = vector.insert_strided_slice %a, %b {offsets = [100], strides = [1, 1]} : vector<4x4xf32> into vector<4x8x16xf32>
+  %1 = vector.insert_strided_slice %a, %b {offsets = [100]} : vector<4x4xf32> into vector<4x8x16xf32>
 }
 
-// -----
-
-func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
-  // expected-error@+1 {{expected strides of same size as source vector rank}}
-  %1 = vector.insert_strided_slice %a, %b {offsets = [2, 2, 2], strides = [1]} : vector<4x4xf32> into vector<4x8x16xf32>
-}
 
 // -----
 
 func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
   // expected-error@+1 {{expected source rank to be no greater than destination rank}}
-  %1 = vector.insert_strided_slice %b, %a {offsets = [2, 2], strides = [1, 1, 1]} : vector<4x8x16xf32> into vector<4x4xf32>
+  %1 = vector.insert_strided_slice %b, %a {offsets = [2, 2]} : vector<4x8x16xf32> into vector<4x4xf32>
 }
 
 // -----
 
 func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
   // expected-error@+1 {{op expected offsets dimension 0 to be confined to [0, 4)}}
-  %1 = vector.insert_strided_slice %a, %b {offsets = [100,100,100], strides = [1, 1]} : vector<4x4xf32> into vector<4x8x16xf32>
-}
-
-// -----
-
-func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
-  // expected-error@+1 {{op expected strides to be confined to [1, 2)}}
-  %1 = vector.insert_strided_slice %a, %b {offsets = [2, 2, 2], strides = [100, 100]} : vector<4x4xf32> into vector<4x8x16xf32>
+  %1 = vector.insert_strided_slice %a, %b {offsets = [100,100,100]} : vector<4x4xf32> into vector<4x8x16xf32>
 }
 
 // -----
 
 func.func @insert_strided_slice(%a: vector<4x4xf32>, %b: vector<4x8x16xf32>) {
   // expected-error@+1 {{op expected sum(offsets, source vector shape) dimension 1 to be confined to [1, 9)}}
-  %1 = vector.insert_strided_slice %a, %b {offsets = [2, 7, 2], strides = [1, 1]} : vector<4x4xf32> into vector<4x8x16xf32>
+  %1 = vector.insert_strided_slice %a, %b {offsets = [2, 7, 2]} : vector<4x4xf32> into vector<4x8x16xf32>
 }
 
 // -----
 
 func.func @insert_strided_slice_scalable(%a : vector<1x1x[2]xi32>, %b: vector<1x4x[4]xi32>) -> vector<1x4x[4]xi32> {
   // expected-error@+1 {{op expected size at idx=2 to match the corresponding base size from the input vector (2 vs 4)}}
-  %0 = vector.insert_strided_slice %a, %b {offsets = [0, 3, 0], strides = [1, 1, 1]} : vector<1x1x[2]xi32> into vector<1x4x[4]xi32>
+  %0 = vector.insert_strided_slice %a, %b {offsets = [0, 3, 0]} : vector<1x1x[2]xi32> into vector<1x4x[4]xi32>
   return %0 : vector<1x4x[4]xi32>
 }
 
@@ -732,72 +719,37 @@ func.func @insert_strided_slice_scalable(%a : vector<1x1x[2]xi32>, %b: vector<1x
 
 func.func @insert_strided_slice_scalable(%a : vector<1x1x4xi32>, %b: vector<1x4x[4]xi32>) -> vector<1x4x[4]xi32> {
   // expected-error@+1 {{op mismatching scalable flags (at source vector idx=2)}}
-  %0 = vector.insert_strided_slice %a, %b {offsets = [0, 3, 0], strides = [1, 1, 1]} : vector<1x1x4xi32> into vector<1x4x[4]xi32>
+  %0 = vector.insert_strided_slice %a, %b {offsets = [0, 3, 0]} : vector<1x1x4xi32> into vector<1x4x[4]xi32>
   return %0 : vector<1x4x[4]xi32>
 }
 
 // -----
 
 func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
-  // expected-error@+1 {{expected offsets, sizes and strides attributes of same size}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [100], sizes = [2, 2], strides = [1, 1]} : vector<4x8x16xf32> to vector<2x2x16xf32>
-}
-
-// -----
-
-func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
   // expected-error@+1 {{expected offsets attribute of rank no greater than vector rank}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2, 2, 2, 2], sizes = [2, 2, 2, 2], strides = [1, 1, 1, 1]} : vector<4x8x16xf32> to vector<2x2x16xf32>
-}
-
-// -----
-
-func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
-  // expected-error@+1 {{op expected offsets dimension 0 to be confined to [0, 4)}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [100], sizes = [100], strides = [100]} : vector<4x8x16xf32> to vector<100x8x16xf32>
-}
-
-// -----
-
-func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
-  // expected-error@+1 {{op expected sizes dimension 0 to be confined to [1, 5)}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [100], strides = [100]} : vector<4x8x16xf32> to vector<100x8x16xf32>
-}
-
-// -----
-
-func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
-  // expected-error@+1 {{op expected strides to be confined to [1, 2)}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [1], strides = [100]} : vector<4x8x16xf32> to vector<1x8x16xf32>
+  %1 = vector.extract_strided_slice %arg0 {offsets = [2, 2, 2, 2], sizes = [2, 2, 2, 2]} : vector<4x8x16xf32> to vector<2x2x16xf32>
 }
 
 // -----
 
 func.func @extract_strided_slice_scalable(%arg0 : vector<1x4x[4]xi32>) -> vector<1x1x[2]xi32> {
     // expected-error@+1 {{op expected size at idx=2 to match the corresponding base size from the input vector (2 vs 4)}}
-    %1 = vector.extract_strided_slice %arg0 {offsets = [0, 3, 0], sizes = [1, 1, 2], strides = [1, 1, 1]} : vector<1x4x[4]xi32> to vector<1x1x[2]xi32>
+    %1 = vector.extract_strided_slice %arg0 {offsets = [0, 3, 0], sizes = [1, 1, 2]} : vector<1x4x[4]xi32> to vector<1x1x[2]xi32>
     return %1 : vector<1x1x[2]xi32>
   }
 
 // -----
 
 func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
-  // expected-error@+1 {{op expected strides to be confined to [1, 2)}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [1], strides = [100]} : vector<4x8x16xf32> to vector<1x8x16xf32>
-}
-
-// -----
-
-func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
   // expected-error@+1 {{op expected sum(offsets, sizes) dimension 0 to be confined to [1, 5)}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [3], strides = [1]} : vector<4x8x16xf32> to vector<3x8x16xf32>
+  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [3]} : vector<4x8x16xf32> to vector<3x8x16xf32>
 }
 
 // -----
 
 func.func @extract_strided_slice(%arg0: vector<4x8x16xf32>) {
   // expected-error@+1 {{op expected result type to be 'vector<2x8x16xf32>'}}
-  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [2], strides = [1]} : vector<4x8x16xf32> to vector<3x1xf32>
+  %1 = vector.extract_strided_slice %arg0 {offsets = [2], sizes = [2]} : vector<4x8x16xf32> to vector<3x1xf32>
 }
 
 // -----

@@ -1868,10 +1868,6 @@ static Value foldExtractFromExtractStrided(ExtractOp extractOp) {
   if (hasZeroDimVectors(extractStridedSliceOp))
     return Value();
 
-  // Return if 'extractStridedSliceOp' has non-unit strides.
-  if (extractStridedSliceOp.hasNonUnitStrides())
-    return Value();
-
   // Trim offsets for dimensions fully extracted.
   auto sliceOffsets =
       extractVector<int64_t>(extractStridedSliceOp.getOffsets());
@@ -1931,10 +1927,6 @@ static Value foldExtractStridedOpFromInsertChain(ExtractOp extractOp) {
     auto insertOffsets = extractVector<int64_t>(insertOp.getOffsets());
     ArrayRef<int64_t> extractOffsets = extractOp.getStaticPosition();
 
-    if (llvm::any_of(insertOp.getStrides(), [](Attribute attr) {
-          return llvm::cast<IntegerAttr>(attr).getInt() != 1;
-        }))
-      return Value();
     bool disjoint = false;
     SmallVector<int64_t, 4> offsetDiffs;
     for (unsigned dim = 0, e = extractOffsets.size(); dim < e; ++dim) {
@@ -3170,16 +3162,12 @@ OpFoldResult vector::InsertOp::fold(FoldAdaptor adaptor) {
 
 void InsertStridedSliceOp::build(OpBuilder &builder, OperationState &result,
                                  Value source, Value dest,
-                                 ArrayRef<int64_t> offsets,
-                                 ArrayRef<int64_t> strides) {
+                                 ArrayRef<int64_t> offsets) {
   result.addOperands({source, dest});
   auto offsetsAttr = getVectorSubscriptAttr(builder, offsets);
-  auto stridesAttr = getVectorSubscriptAttr(builder, strides);
   result.addTypes(dest.getType());
   result.addAttribute(InsertStridedSliceOp::getOffsetsAttrName(result.name),
                       offsetsAttr);
-  result.addAttribute(InsertStridedSliceOp::getStridesAttrName(result.name),
-                      stridesAttr);
 }
 
 // TODO: Should be moved to Tablegen ConfinedAttr attributes.
@@ -3275,12 +3263,9 @@ LogicalResult InsertStridedSliceOp::verify() {
   auto sourceVectorType = getSourceVectorType();
   auto destVectorType = getDestVectorType();
   auto offsets = getOffsetsAttr();
-  auto strides = getStridesAttr();
   if (offsets.size() != static_cast<unsigned>(destVectorType.getRank()))
     return emitOpError(
         "expected offsets of same size as destination vector rank");
-  if (strides.size() != static_cast<unsigned>(sourceVectorType.getRank()))
-    return emitOpError("expected strides of same size as source vector rank");
   if (sourceVectorType.getRank() > destVectorType.getRank())
     return emitOpError(
         "expected source rank to be no greater than destination rank");
@@ -3291,12 +3276,8 @@ LogicalResult InsertStridedSliceOp::verify() {
       destShape.size() - sourceShape.size(), 0);
   sourceShapeAsDestShape.append(sourceShape.begin(), sourceShape.end());
   auto offName = InsertStridedSliceOp::getOffsetsAttrName();
-  auto stridesName = InsertStridedSliceOp::getStridesAttrName();
   if (failed(isIntegerArrayAttrConfinedToShape(*this, offsets, destShape,
                                                offName)) ||
-      failed(isIntegerArrayAttrConfinedToRange(*this, strides, /*min=*/1,
-                                               /*max=*/1, stridesName,
-                                               /*halfOpen=*/false)) ||
       failed(isSumOfIntegerArrayAttrConfinedToShape(
           *this, offsets,
           makeI64ArrayAttr(sourceShapeAsDestShape, getContext()), destShape,
@@ -3372,10 +3353,8 @@ public:
     if (extractStridedSliceOp.getOperand() != insertStridedSliceOp.getDest())
       return failure();
 
-    // Check if have the same strides and offsets.
-    if (extractStridedSliceOp.getStrides() !=
-            insertStridedSliceOp.getStrides() ||
-        extractStridedSliceOp.getOffsets() != insertStridedSliceOp.getOffsets())
+    // Check if they have the same offsets.
+    if (extractStridedSliceOp.getOffsets() != insertStridedSliceOp.getOffsets())
       return failure();
 
     rewriter.replaceOp(insertStridedSliceOp, insertStridedSliceOp.getDest());
@@ -3419,10 +3398,6 @@ public:
 
     // TODO: Support poison.
     if (isa<ub::PoisonAttr>(vectorDestCst) || isa<ub::PoisonAttr>(sourceCst))
-      return failure();
-
-    // TODO: Handle non-unit strides when they become available.
-    if (op.hasNonUnitStrides())
       return failure();
 
     VectorType sliceVecTy = sourceValue.getType();
@@ -3604,9 +3579,8 @@ Type OuterProductOp::getExpectedMaskType() {
 //   2. Add sizes from 'vectorType' for remaining dims.
 // Scalable flags are inherited from 'vectorType'.
 static Type inferStridedSliceOpResultType(VectorType vectorType,
-                                          ArrayAttr offsets, ArrayAttr sizes,
-                                          ArrayAttr strides) {
-  assert(offsets.size() == sizes.size() && offsets.size() == strides.size());
+                                          ArrayAttr offsets, ArrayAttr sizes) {
+  assert(offsets.size() == sizes.size());
   SmallVector<int64_t, 4> shape;
   shape.reserve(vectorType.getRank());
   unsigned idx = 0;
@@ -3621,57 +3595,45 @@ static Type inferStridedSliceOpResultType(VectorType vectorType,
 
 void ExtractStridedSliceOp::build(OpBuilder &builder, OperationState &result,
                                   Value source, ArrayRef<int64_t> offsets,
-                                  ArrayRef<int64_t> sizes,
-                                  ArrayRef<int64_t> strides) {
+                                  ArrayRef<int64_t> sizes) {
   result.addOperands(source);
   auto offsetsAttr = getVectorSubscriptAttr(builder, offsets);
   auto sizesAttr = getVectorSubscriptAttr(builder, sizes);
-  auto stridesAttr = getVectorSubscriptAttr(builder, strides);
-  result.addTypes(
-      inferStridedSliceOpResultType(llvm::cast<VectorType>(source.getType()),
-                                    offsetsAttr, sizesAttr, stridesAttr));
+  result.addTypes(inferStridedSliceOpResultType(
+      llvm::cast<VectorType>(source.getType()), offsetsAttr, sizesAttr));
   result.addAttribute(ExtractStridedSliceOp::getOffsetsAttrName(result.name),
                       offsetsAttr);
   result.addAttribute(ExtractStridedSliceOp::getSizesAttrName(result.name),
                       sizesAttr);
-  result.addAttribute(ExtractStridedSliceOp::getStridesAttrName(result.name),
-                      stridesAttr);
 }
 
 LogicalResult ExtractStridedSliceOp::verify() {
   auto type = getSourceVectorType();
   auto offsets = getOffsetsAttr();
   auto sizes = getSizesAttr();
-  auto strides = getStridesAttr();
-  if (offsets.size() != sizes.size() || offsets.size() != strides.size())
+  if (offsets.size() != sizes.size())
     return emitOpError(
         "expected offsets, sizes and strides attributes of same size");
 
   auto shape = type.getShape();
   auto offName = getOffsetsAttrName();
   auto sizesName = getSizesAttrName();
-  auto stridesName = getStridesAttrName();
   if (failed(
           isIntegerArrayAttrSmallerThanShape(*this, offsets, shape, offName)) ||
       failed(
           isIntegerArrayAttrSmallerThanShape(*this, sizes, shape, sizesName)) ||
-      failed(isIntegerArrayAttrSmallerThanShape(*this, strides, shape,
-                                                stridesName)) ||
       failed(
           isIntegerArrayAttrConfinedToShape(*this, offsets, shape, offName)) ||
       failed(isIntegerArrayAttrConfinedToShape(*this, sizes, shape, sizesName,
                                                /*halfOpen=*/false,
                                                /*min=*/1)) ||
-      failed(isIntegerArrayAttrConfinedToRange(*this, strides, /*min=*/1,
-                                               /*max=*/1, stridesName,
-                                               /*halfOpen=*/false)) ||
       failed(isSumOfIntegerArrayAttrConfinedToShape(*this, offsets, sizes,
                                                     shape, offName, sizesName,
                                                     /*halfOpen=*/false)))
     return failure();
 
-  auto resultType = inferStridedSliceOpResultType(getSourceVectorType(),
-                                                  offsets, sizes, strides);
+  auto resultType =
+      inferStridedSliceOpResultType(getSourceVectorType(), offsets, sizes);
   if (getResult().getType() != resultType)
     return emitOpError("expected result type to be ") << resultType;
 
@@ -3701,7 +3663,6 @@ foldExtractStridedOpFromInsertChain(ExtractStridedSliceOp op) {
     return llvm::cast<IntegerAttr>(array[idx]).getInt();
   };
   ArrayAttr extractOffsets = op.getOffsets();
-  ArrayAttr extractStrides = op.getStrides();
   ArrayAttr extractSizes = op.getSizes();
   auto insertOp = op.getVector().getDefiningOp<InsertStridedSliceOp>();
   while (insertOp) {
@@ -3709,7 +3670,6 @@ foldExtractStridedOpFromInsertChain(ExtractStridedSliceOp op) {
         insertOp.getSourceVectorType().getRank())
       return failure();
     ArrayAttr insertOffsets = insertOp.getOffsets();
-    ArrayAttr insertStrides = insertOp.getStrides();
     // If the rank of extract is greater than the rank of insert, we are likely
     // extracting a partial chunk of the vector inserted.
     if (extractOffsets.size() > insertOffsets.size())
@@ -3718,8 +3678,6 @@ foldExtractStridedOpFromInsertChain(ExtractStridedSliceOp op) {
     bool disjoint = false;
     SmallVector<int64_t, 4> offsetDiffs;
     for (unsigned dim = 0, e = extractOffsets.size(); dim < e; ++dim) {
-      if (getElement(extractStrides, dim) != getElement(insertStrides, dim))
-        return failure();
       int64_t start = getElement(insertOffsets, dim);
       int64_t end = start + insertOp.getSourceVectorType().getDimSize(dim);
       int64_t offset = getElement(extractOffsets, dim);
@@ -3764,10 +3722,6 @@ foldExtractStridedSliceNonSplatConstant(ExtractStridedSliceOp op,
 
   auto dense = llvm::dyn_cast_if_present<DenseElementsAttr>(foldInput);
   if (!dense)
-    return {};
-
-  // TODO: Handle non-unit strides when they become available.
-  if (op.hasNonUnitStrides())
     return {};
 
   VectorType sourceVecTy = op.getSourceVectorType();
@@ -3840,9 +3794,6 @@ public:
     auto *defOp = extractStridedSliceOp.getVector().getDefiningOp();
     auto constantMaskOp = dyn_cast_or_null<ConstantMaskOp>(defOp);
     if (!constantMaskOp)
-      return failure();
-    // Return if 'extractStridedSliceOp' has non-unit strides.
-    if (extractStridedSliceOp.hasNonUnitStrides())
       return failure();
     // Gather constant mask dimension sizes.
     ArrayRef<int64_t> maskDimSizes = constantMaskOp.getMaskDimSizes();
@@ -3919,8 +3870,7 @@ public:
       source = rewriter.create<ExtractStridedSliceOp>(
           op->getLoc(), source,
           getI64SubArray(op.getOffsets(), /* dropFront=*/rankDiff),
-          getI64SubArray(op.getSizes(), /* dropFront=*/rankDiff),
-          getI64SubArray(op.getStrides(), /* dropFront=*/rankDiff));
+          getI64SubArray(op.getSizes(), /* dropFront=*/rankDiff));
     }
     rewriter.replaceOpWithNewOp<BroadcastOp>(op, op.getType(), source);
     return success();
@@ -3949,8 +3899,7 @@ public:
 ///     Before:
 ///         %1 = vector.extract_strided_slice %arg0 {
 ///                offsets = [0, 0, 0, 0, 0],
-///                sizes = [1, 1, 1, 1, 8],
-///                strides = [1, 1, 1, 1, 1]
+///                sizes = [1, 1, 1, 1, 8]
 ///              } : vector<8x1x1x2x8xi8> to vector<1x1x1x1x8xi8>
 ///     After:
 ///         %0 = vector.extract %arg0[0, 0, 0, 0]
@@ -3965,8 +3914,6 @@ public:
 
   LogicalResult matchAndRewrite(ExtractStridedSliceOp op,
                                 PatternRewriter &rewriter) const override {
-    if (op.hasNonUnitStrides())
-      return failure();
     Value source = op.getOperand();
     auto sourceType = cast<VectorType>(source.getType());
     if (sourceType.isScalable() || sourceType.getRank() == 0)

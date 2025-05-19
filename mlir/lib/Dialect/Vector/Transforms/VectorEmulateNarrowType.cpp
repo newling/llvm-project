@@ -210,7 +210,7 @@ static FailureOr<Operation *> getCompressedMaskOp(OpBuilder &rewriter,
 ///
 /// EXAMPLE:
 ///     %res = vector.extract_strided_slice %src
-///       { offsets = [offset], sizes = [numElemsToExtract], strides = [1] }
+///              { offsets = [offset], sizes = [numElemsToExtract] }
 static Value staticallyExtractSubvector(OpBuilder &rewriter, Location loc,
                                         Value src, int64_t offset,
                                         int64_t numElemsToExtract) {
@@ -226,14 +226,11 @@ static Value staticallyExtractSubvector(OpBuilder &rewriter, Location loc,
 
   auto offsets = rewriter.getI64ArrayAttr({offset});
   auto sizes = rewriter.getI64ArrayAttr({numElemsToExtract});
-  auto strides = rewriter.getI64ArrayAttr({1});
 
   auto resultVectorType =
       VectorType::get({numElemsToExtract}, vectorType.getElementType());
-  return rewriter
-      .create<vector::ExtractStridedSliceOp>(loc, resultVectorType, src,
-                                             offsets, sizes, strides)
-      ->getResult(0);
+  return rewriter.create<vector::ExtractStridedSliceOp>(loc, resultVectorType,
+                                                        src, offsets, sizes);
 }
 
 /// Inserts 1-D subvector into a 1-D vector.
@@ -257,9 +254,8 @@ static Value staticallyInsertSubvector(OpBuilder &rewriter, Location loc,
     return src;
 
   auto offsets = rewriter.getI64ArrayAttr({offset});
-  auto strides = rewriter.getI64ArrayAttr({1});
   return rewriter.create<vector::InsertStridedSliceOp>(loc, destVecTy, src,
-                                                       dest, offsets, strides);
+                                                       dest, offsets);
 }
 
 /// Extracts 1-D subvector from a 1-D vector.

@@ -150,16 +150,16 @@ ExtFOnFloat8RewritePattern::matchAndRewrite(arith::ExtFOp op,
 
   for (int64_t i = 0; i < numElements; i += 4) {
     int64_t elemsThisOp = std::min(numElements, i + 4) - i;
-    Value inSlice = rewriter.create<vector::ExtractStridedSliceOp>(
-        loc, in, i, elemsThisOp, 1);
+    Value inSlice =
+        rewriter.create<vector::ExtractStridedSliceOp>(loc, in, i, elemsThisOp);
     for (int64_t j = 0; j < elemsThisOp; j += 2) {
       if (i + j + 1 < numElements) { // Convert two 8-bit elements
         Value asFloats = rewriter.create<amdgpu::ExtPackedFp8Op>(
             loc, extResType, inSlice, j / 2);
         Type desType = VectorType::get(2, outElemType);
         Value asType = castF32To(desType, asFloats, loc, rewriter);
-        result = rewriter.create<vector::InsertStridedSliceOp>(
-            loc, asType, result, i + j, 1);
+        result = rewriter.create<vector::InsertStridedSliceOp>(loc, asType,
+                                                               result, i + j);
       } else { // Convert a 8-bit element
         Value asFloat = rewriter.create<amdgpu::ExtPackedFp8Op>(
             loc, rewriter.getF32Type(), inSlice, j / 2 * 2);
@@ -313,9 +313,9 @@ TruncFToFloat8RewritePattern::matchAndRewrite(arith::TruncFOp op,
     }
     if (elemsThisOp < 4)
       thisResult = rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, thisResult, 0, elemsThisOp, 1);
+          loc, thisResult, 0, elemsThisOp);
     result = rewriter.create<vector::InsertStridedSliceOp>(loc, thisResult,
-                                                           result, i, 1);
+                                                           result, i);
   }
 
   if (inVectorTy.getRank() != outVecType.getRank()) {
@@ -381,10 +381,10 @@ LogicalResult TruncfToFloat16RewritePattern::matchAndRewrite(
         rewriter.create<ROCDL::CvtPkRtz>(loc, truncResType, elemA, elemB);
     // Place back the truncated result into the possibly larger vector. If we
     // are operating on a size 2 vector, these operations should be folded away
-    thisResult = rewriter.create<vector::ExtractStridedSliceOp>(
-        loc, thisResult, 0, elemsThisOp, 1);
+    thisResult = rewriter.create<vector::ExtractStridedSliceOp>(loc, thisResult,
+                                                                0, elemsThisOp);
     result = rewriter.create<vector::InsertStridedSliceOp>(loc, thisResult,
-                                                           result, i, 1);
+                                                           result, i);
   }
 
   if (inVectorTy.getRank() != outVecType.getRank()) {

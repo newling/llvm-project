@@ -1068,17 +1068,14 @@ def Vector_InsertStridedSliceOp :
     PredOpTrait<"operand #0 and result have same element type",
                  TCresVTEtIsSameAsOpBase<0, 0>>,
     AllTypesMatch<["dest", "res"]>]>,
-    Arguments<(ins AnyVectorOfNonZeroRank:$valueToStore, AnyVectorOfNonZeroRank:$dest, I64ArrayAttr:$offsets,
-               I64ArrayAttr:$strides)>,
+    Arguments<(ins AnyVectorOfNonZeroRank:$valueToStore, AnyVectorOfNonZeroRank:$dest, I64ArrayAttr:$offsets)>,
     Results<(outs AnyVectorOfNonZeroRank:$res)> {
   let summary = "strided_slice operation";
   let description = [{
     Takes a k-D valueToStore vector, an n-D destination vector (n >= k), n-sized
-    `offsets` integer array attribute, a k-sized `strides` integer array attribute
+    `offsets` integer array attribute,
     and inserts the k-D valueToStore vector as a strided subvector at the proper offset
     into the n-D destination vector.
-
-    At the moment strides must contain only 1s.
 
     Returns an n-D vector that is a copy of the n-D destination vector in which
     the last k-D dimensions contain the k-D valueToStore vector elements strided at
@@ -1088,7 +1085,7 @@ def Vector_InsertStridedSliceOp :
 
     ```mlir
     %2 = vector.insert_strided_slice %0, %1
-        {offsets = [0, 0, 2], strides = [1, 1]}:
+        {offsets = [0, 0, 2]}:
       vector<2x4xf32> into vector<16x4x8xf32>
     ```
   }];
@@ -1099,7 +1096,7 @@ def Vector_InsertStridedSliceOp :
 
   let builders = [
     OpBuilder<(ins "Value":$valueToStore, "Value":$dest,
-      "ArrayRef<int64_t>":$offsets, "ArrayRef<int64_t>":$strides)>
+      "ArrayRef<int64_t>":$offsets)>
   ];
   let extraClassDeclaration = [{
     // TODO: Rename
@@ -1108,11 +1105,6 @@ def Vector_InsertStridedSliceOp :
     }
     VectorType getDestVectorType() {
       return ::llvm::cast<VectorType>(getDest().getType());
-    }
-    bool hasNonUnitStrides() {
-      return llvm::any_of(getStrides(), [](Attribute attr) {
-        return ::llvm::cast<IntegerAttr>(attr).getInt() != 1;
-      });
     }
   }];
 
@@ -1212,15 +1204,13 @@ def Vector_ExtractStridedSliceOp :
     PredOpTrait<"operand and result have same element type",
                  TCresVTEtIsSameAsOpBase<0, 0>>]>,
     Arguments<(ins AnyVectorOfNonZeroRank:$vector, I64ArrayAttr:$offsets,
-               I64ArrayAttr:$sizes, I64ArrayAttr:$strides)>,
+               I64ArrayAttr:$sizes)>,
     Results<(outs AnyVectorOfNonZeroRank)> {
   let summary = "extract_strided_slice operation";
   let description = [{
     Takes an n-D vector, k-D `offsets` integer array attribute, a k-sized
-    `sizes` integer array attribute, a k-sized `strides` integer array
-    attribute and extracts the n-D subvector at the proper offset.
-
-    At the moment strides must contain only 1s.
+    `sizes` integer array attribute, and extracts the n-D subvector at the
+    proper offset.
 
     Returns an n-D vector where the first k-D dimensions match the `sizes`
     attribute. The returned subvector contains the elements starting at offset
@@ -1230,30 +1220,20 @@ def Vector_ExtractStridedSliceOp :
 
     ```mlir
     %1 = vector.extract_strided_slice %0
-        {offsets = [0, 2], sizes = [2, 4], strides = [1, 1]}:
+        {offsets = [0, 2], sizes = [2, 4]}:
       vector<4x8x16xf32> to vector<2x4x16xf32>
-
-    // TODO: Evolve to a range form syntax similar to:
-    %1 = vector.extract_strided_slice %0[0:2:1][2:4:1]
-      vector<4x8x16xf32> to vector<2x4x16xf32>
-    ```
 
     TODO: Implement support for poison indices.
   }];
   let builders = [
     OpBuilder<(ins "Value":$source, "ArrayRef<int64_t>":$offsets,
-      "ArrayRef<int64_t>":$sizes, "ArrayRef<int64_t>":$strides)>
+      "ArrayRef<int64_t>":$sizes)>
   ];
   let extraClassDeclaration = [{
     VectorType getSourceVectorType() {
       return ::llvm::cast<VectorType>(getVector().getType());
     }
     void getOffsets(SmallVectorImpl<int64_t> &results);
-    bool hasNonUnitStrides() {
-      return llvm::any_of(getStrides(), [](Attribute attr) {
-        return ::llvm::cast<IntegerAttr>(attr).getInt() != 1;
-      });
-    }
   }];
   let hasCanonicalizer = 1;
   let hasFolder = 1;

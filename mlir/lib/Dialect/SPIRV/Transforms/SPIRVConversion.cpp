@@ -993,12 +993,11 @@ struct FuncOpVectorUnroll final : OpRewritePattern<func::FuncOp> {
       ++newOpCount;
 
       // Create the `vector.insert_strided_slice` ops.
-      SmallVector<int64_t> strides(targetShape->size(), 1);
       SmallVector<Type> newTypes;
       for (SmallVector<int64_t> offsets :
            StaticTileOffsetRange(originalShape, *targetShape)) {
-        result = rewriter.create<vector::InsertStridedSliceOp>(
-            loc, dummy, result, offsets, strides);
+        result = rewriter.create<vector::InsertStridedSliceOp>(loc, dummy,
+                                                               result, offsets);
         newTypes.push_back(unrolledType);
         unrolledInputNums.push_back(newInputNo);
         ++newInputNo;
@@ -1112,7 +1111,7 @@ struct ReturnOpVectorUnroll final : OpRewritePattern<func::ReturnOp> {
       for (SmallVector<int64_t> offsets :
            StaticTileOffsetRange(originalShape, *targetShape)) {
         Value result = rewriter.create<vector::ExtractStridedSliceOp>(
-            loc, returnValue, offsets, extractShape, strides);
+            loc, returnValue, offsets, extractShape);
         if (originalShape.size() > 1) {
           SmallVector<int64_t> extractIndices(originalShape.size() - 1, 0);
           result =

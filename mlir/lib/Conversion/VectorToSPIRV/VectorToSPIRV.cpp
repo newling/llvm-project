@@ -214,9 +214,6 @@ struct VectorExtractStridedSliceOpConvert final
 
     uint64_t offset = getFirstIntValue(extractOp.getOffsets());
     uint64_t size = getFirstIntValue(extractOp.getSizes());
-    uint64_t stride = getFirstIntValue(extractOp.getStrides());
-    if (stride != 1)
-      return failure();
 
     Value srcVector = adaptor.getOperands().front();
 
@@ -388,9 +385,6 @@ struct VectorInsertStridedSliceOpConvert final
     Value srcVector = adaptor.getOperands().front();
     Value dstVector = adaptor.getOperands().back();
 
-    uint64_t stride = getFirstIntValue(insertOp.getStrides());
-    if (stride != 1)
-      return failure();
     uint64_t offset = getFirstIntValue(insertOp.getOffsets());
 
     if (isa<spirv::ScalarType>(srcVector.getType())) {

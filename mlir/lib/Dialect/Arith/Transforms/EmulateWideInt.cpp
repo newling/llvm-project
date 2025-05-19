@@ -78,10 +78,9 @@ static Value extractLastDimSlice(ConversionPatternRewriter &rewriter,
   offsets.back() = lastOffset;
   auto sizes = llvm::to_vector(shape);
   sizes.back() = 1;
-  SmallVector<int64_t> strides(shape.size(), 1);
 
   return rewriter.create<vector::ExtractStridedSliceOp>(loc, input, offsets,
-                                                        sizes, strides);
+                                                        sizes);
 }
 
 /// Extracts two vector slices from the `input` whose type is `vector<...x2T>`,
@@ -140,9 +139,8 @@ static Value insertLastDimSlice(ConversionPatternRewriter &rewriter,
 
   SmallVector<int64_t> offsets(shape.size(), 0);
   offsets.back() = lastOffset;
-  SmallVector<int64_t> strides(shape.size(), 1);
   return rewriter.create<vector::InsertStridedSliceOp>(loc, source, dest,
-                                                       offsets, strides);
+                                                       offsets);
 }
 
 /// Constructs a new vector of type `resultType` by creating a series of

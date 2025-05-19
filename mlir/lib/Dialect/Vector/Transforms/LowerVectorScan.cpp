@@ -86,24 +86,24 @@ namespace {
 /// ```
 ///   %cst = arith.constant dense<0> : vector<2x3xi32>
 ///   %0 = vector.extract_strided_slice %arg0
-///     {offsets = [0, 0], sizes = [2, 1], strides = [1, 1]}
+///     {offsets = [0, 0], sizes = [2, 1]}
 ///       : vector<2x3xi32> to vector<2x1xi32>
 ///   %1 = vector.insert_strided_slice %0, %cst
-///     {offsets = [0, 0], strides = [1, 1]}
+///     {offsets = [0, 0]}
 ///       : vector<2x1xi32> into vector<2x3xi32>
 ///   %2 = vector.extract_strided_slice %arg0
-///     {offsets = [0, 1], sizes = [2, 1], strides = [1, 1]}
+///     {offsets = [0, 1], sizes = [2, 1]}
 ///       : vector<2x3xi32> to vector<2x1xi32>
 ///   %3 = arith.muli %0, %2 : vector<2x1xi32>
 ///   %4 = vector.insert_strided_slice %3, %1
-///     {offsets = [0, 1], strides = [1, 1]}
+///     {offsets = [0, 1]}
 ///       : vector<2x1xi32> into vector<2x3xi32>
 ///   %5 = vector.extract_strided_slice %arg0
-///     {offsets = [0, 2], sizes = [2, 1], strides = [1, 1]}
+///     {offsets = [0, 2], sizes = [2, 1]}
 ///       : vector<2x3xi32> to vector<2x1xi32>
 ///   %6 = arith.muli %3, %5 : vector<2x1xi32>
 ///   %7 = vector.insert_strided_slice %6, %4
-///     {offsets = [0, 2], strides = [1, 1]}
+///     {offsets = [0, 2]}
 ///       : vector<2x1xi32> into vector<2x3xi32>
 ///   %8 = vector.shape_cast %6 : vector<2x1xi32> to vector<2xi32>
 ///   return %7, %8 : vector<2x3xi32>, vector<2xi32>
@@ -134,19 +134,16 @@ struct ScanToArithOps : public OpRewritePattern<vector::ScanOp> {
     reductionShape[reductionDim] = 1;
     VectorType reductionType = VectorType::get(reductionShape, elType);
     SmallVector<int64_t> offsets(destRank, 0);
-    SmallVector<int64_t> strides(destRank, 1);
     SmallVector<int64_t> sizes(destShape);
     sizes[reductionDim] = 1;
     ArrayAttr scanSizes = rewriter.getI64ArrayAttr(sizes);
-    ArrayAttr scanStrides = rewriter.getI64ArrayAttr(strides);
 
     Value lastOutput, lastInput;
     for (int i = 0; i < destShape[reductionDim]; i++) {
       offsets[reductionDim] = i;
       ArrayAttr scanOffsets = rewriter.getI64ArrayAttr(offsets);
       Value input = rewriter.create<vector::ExtractStridedSliceOp>(
-          loc, reductionType, scanOp.getSource(), scanOffsets, scanSizes,
-          scanStrides);
+          loc, reductionType, scanOp.getSource(), scanOffsets, scanSizes);
       Value output;
       if (i == 0) {
         if (inclusive) {
@@ -166,8 +163,8 @@ struct ScanToArithOps : public OpRewritePattern<vector::ScanOp> {
         output = vector::makeArithReduction(rewriter, loc, scanOp.getKind(),
                                             lastOutput, y);
       }
-      result = rewriter.create<vector::InsertStridedSliceOp>(
-          loc, output, result, offsets, strides);
+      result = rewriter.create<vector::InsertStridedSliceOp>(loc, output,
+                                                             result, offsets);
       lastOutput = output;
       lastInput = input;
     }
