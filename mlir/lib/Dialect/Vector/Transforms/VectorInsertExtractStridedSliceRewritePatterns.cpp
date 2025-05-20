@@ -27,10 +27,20 @@ using namespace mlir::vector;
 /// [ConvertSameRankInsertStridedSliceIntoShuffle].
 ///
 /// For a k-D source and n-D destination vector (k < n), we emit:
-///   1. ExtractOp to extract the (unique) (n-1)-D subvector into which to
+///   1. ExtractOp to extract the (unique) k-D subvector into which to
 ///      insert the k-D source.
-///   2. k-D -> (n-1)-D InsertStridedSlice op
+///   2. k-D -> k-D InsertStridedSlice op
 ///   3. InsertOp that is the reverse of 1.
+///
+/// BEFORE
+/// %out = vector.insert_strided_slice %src, %dst
+///        {offsets = [3, 1], strides = [1]} : vector<4xi8> into vector<4x6xi8>
+///
+/// AFTER
+/// %extract = vector.extract %dst[3] : vector<6xi8> from vector<4x6xi8>
+/// %insert  = vector.insert_strided_slice %src, %extract
+///            {offsets = [1], strides = [1]} : vector<4xi8> into vector<6xi8>
+/// %out     = vector.insert %insert, %dst[3] : vector<6xi8> into vector<4x6xi8>
 class DecomposeDifferentRankInsertStridedSlice
     : public OpRewritePattern<InsertStridedSliceOp> {
 public:
@@ -38,44 +48,48 @@ public:
 
   LogicalResult matchAndRewrite(InsertStridedSliceOp op,
                                 PatternRewriter &rewriter) const override {
-    auto srcType = op.getSourceVectorType();
-    auto dstType = op.getDestVectorType();
 
-    if (op.getOffsets().getValue().empty())
+    ArrayAttr offsets = op.getOffsets();
+    if (offsets.getValue().empty())
       return failure();
 
-    auto loc = op.getLoc();
-    int64_t rankDiff = dstType.getRank() - srcType.getRank();
-    assert(rankDiff >= 0);
+    VectorType srcType = op.getSourceVectorType();
+    VectorType dstType = op.getDestVectorType();
+    int64_t srcRank = srcType.getRank();
+    int64_t dstRank = dstType.getRank();
+    int64_t rankDiff = dstRank - srcRank;
+    assert(rankDiff >= 0 &&
+           "insert_strided_slice source rank cannot excede dest rank");
+
+    // ConvertSameRankInsertStridedSliceIntoShuffle will kick in for this
     if (rankDiff == 0)
       return failure();
 
-    int64_t rankRest = dstType.getRank() - rankDiff;
+    Location loc = op.getLoc();
+
     // Extract / insert the subvector of matching rank and InsertStridedSlice
     // on it.
-    Value extracted = rewriter.create<ExtractOp>(
-        loc, op.getDest(),
-        getI64SubArray(op.getOffsets(), /*dropFront=*/0,
-                       /*dropBack=*/rankRest));
+    Value extracted =
+        rewriter.create<ExtractOp>(loc, op.getDest(),
+                                   getI64SubArray(offsets, /*dropFront=*/0,
+                                                  /*dropBack=*/srcRank));
 
-    // A different pattern will kick in for InsertStridedSlice with matching
-    // ranks.
     auto stridedSliceInnerOp = rewriter.create<InsertStridedSliceOp>(
         loc, op.getValueToStore(), extracted,
-        getI64SubArray(op.getOffsets(), /*dropFront=*/rankDiff),
+        getI64SubArray(offsets, /*dropFront=*/rankDiff),
         getI64SubArray(op.getStrides(), /*dropFront=*/0));
 
     rewriter.replaceOpWithNewOp<InsertOp>(
         op, stridedSliceInnerOp.getResult(), op.getDest(),
-        getI64SubArray(op.getOffsets(), /*dropFront=*/0,
-                       /*dropBack=*/rankRest));
+        getI64SubArray(offsets, /*dropFront=*/0,
+                       /*dropBack=*/srcRank));
     return success();
   }
 };
 
 /// RewritePattern for InsertStridedSliceOp where source and destination vectors
 /// have the same rank. For each outermost index in the slice:
-///   begin    end             stride
+///   begin :        end         : stride
 /// [offset : offset+size*stride : stride]
 ///   1. ExtractOp one (k-1)-D source subvector and one (n-1)-D dest subvector.
 ///   2. InsertStridedSlice (k-1)-D into (n-1)-D
