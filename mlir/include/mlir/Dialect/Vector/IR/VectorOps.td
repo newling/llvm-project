@@ -1068,26 +1068,28 @@ def Vector_InsertStridedSliceOp :
     PredOpTrait<"operand #0 and result have same element type",
                  TCresVTEtIsSameAsOpBase<0, 0>>,
     AllTypesMatch<["dest", "res"]>]>,
-    Arguments<(ins AnyVectorOfNonZeroRank:$valueToStore, AnyVectorOfNonZeroRank:$dest, I64ArrayAttr:$offsets)>,
+    Arguments<(ins AnyVectorOfNonZeroRank:$valueToStore, AnyVectorOfNonZeroRank:$dest,
+               I64ArrayAttr:$offsets)>,
     Results<(outs AnyVectorOfNonZeroRank:$res)> {
   let summary = "strided_slice operation";
   let description = [{
     Takes a k-D valueToStore vector, an n-D destination vector (n >= k), n-sized
-    `offsets` integer array attribute,
-    and inserts the k-D valueToStore vector as a strided subvector at the proper offset
-    into the n-D destination vector.
+    `offsets` integer array attribute, and inserts the k-D valueToStore vector at
+    the proper offset into the n-D destination vector.
 
     Returns an n-D vector that is a copy of the n-D destination vector in which
-    the last k-D dimensions contain the k-D valueToStore vector elements strided at
-    the proper location as specified by the offsets.
+    the last k-D dimensions contain the k-D valueToStore vector elements at the
+    proper location as specified by the offsets.
 
     Example:
 
     ```mlir
-    %2 = vector.insert_strided_slice %0, %1
-        {offsets = [0, 0, 2]}:
-      vector<2x4xf32> into vector<16x4x8xf32>
+    %2 = vector.insert_strided_slice %0, %1 {offsets = [1, 0, 2]}:
+                                         vector<3x1xf32> into vector<2x4x8xf32>
     ```
+
+    The example can be viewed as a high-dimensional representation of inserting
+    3 values into a vector of 64 elements with an insertion stride of 8.
   }];
 
   let assemblyFormat = [{
