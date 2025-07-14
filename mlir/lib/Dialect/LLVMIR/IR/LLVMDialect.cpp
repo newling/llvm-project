@@ -3121,6 +3121,19 @@ static int64_t getNumElements(Type t) {
   return 1;
 }
 
+/// Determine the element type of the given type, recursively. Supported types
+/// are scalar types, vector types, and LLVM array types. If the type is not one
+/// of these, null is returned.
+static Type getElementType(Type t) {
+  if (t.isSignlessIntOrIndexOrFloat())
+    return t;
+  if (auto vecType = dyn_cast<VectorType>(t))
+    return getElementType(vecType.getElementType());
+  if (auto arrayType = dyn_cast<LLVM::LLVMArrayType>(t))
+    return getElementType(arrayType.getElementType());
+  return {};
+}
+
 /// Check if the given type is a scalable vector type or a vector/array type
 /// that contains a nested scalable vector type.
 static bool hasScalableVectorType(Type t) {
@@ -3268,7 +3281,7 @@ LogicalResult LLVM::ConstantOp::verify() {
     if (isa<IntegerType>(getType()) && !getType().isInteger(floatWidth)) {
       return emitOpError() << "expected integer type of width " << floatWidth;
     }
-  } else if (isa<ElementsAttr>(getValue())) {
+  } else if (auto elementsAttr = dyn_cast<ElementsAttr>(getValue())) {
     if (hasScalableVectorType(getType())) {
       // The exact number of elements of a scalable vector is unknown, so we
       // allow only splat attributes.
@@ -3281,12 +3294,20 @@ LogicalResult LLVM::ConstantOp::verify() {
     if (!isa<VectorType, LLVM::LLVMArrayType>(getType()))
       return emitOpError() << "expected vector or array type";
     // The number of elements of the attribute and the type must match.
-    if (auto elementsAttr = dyn_cast<ElementsAttr>(getValue())) {
-      int64_t attrNumElements = elementsAttr.getNumElements();
-      if (getNumElements(getType()) != attrNumElements)
-        return emitOpError()
-               << "type and attribute have a different number of elements: "
-               << getNumElements(getType()) << " vs. " << attrNumElements;
+    int64_t attrNumElements = elementsAttr.getNumElements();
+    if (getNumElements(getType()) != attrNumElements)
+      return emitOpError()
+             << "type and attribute have a different number of elements: "
+             << getNumElements(getType()) << " vs. " << attrNumElements;
+
+    // If the attribute and result types have determinable element types
+    // and neither is index, check that they match.
+    auto t0 = getElementType(getType());
+    auto t1 = getElementType(elementsAttr.getElementType());
+    if (t0 && t1 && !t0.isIndex() && !t1.isIndex() && (t0 != t1)) {
+      return emitOpError() << "type and attribute type are different: "
+                           << getElementType(getType()) << " vs. "
+                           << elementsAttr.getElementType();
     }
   } else if (auto arrayAttr = dyn_cast<ArrayAttr>(getValue())) {
     auto arrayType = dyn_cast<LLVM::LLVMArrayType>(getType());

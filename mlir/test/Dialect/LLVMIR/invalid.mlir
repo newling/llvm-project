@@ -433,6 +433,14 @@ llvm.func @const_wrong_number_of_elements() -> vector<5xf64> {
 
 // -----
 
+llvm.func @const_wrong_element_type() -> vector<5xf64> {
+   // expected-error @+1{{'llvm.mlir.constant' op type and attribute type are different: 'f64' vs. 'i64'}}
+  %0 = llvm.mlir.constant(dense<[1, 1, 2, 1, 3]> : vector<5xi64>) : vector<5xf64>
+  llvm.return %0 : vector<5xf64>
+}
+
+// -----
+
 llvm.func @scalable_vec_requires_splat() -> vector<[4]xf64> {
   // expected-error @+1{{scalable vector type requires a splat attribute}}
   %0 = llvm.mlir.constant(dense<[1.0, 1.0, 2.0, 2.0]> : tensor<4xf64>) : vector<[4]xf64>
